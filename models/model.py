@@ -8,7 +8,7 @@ import logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='/home/lumk/scpert/demo/los/train.log',  
+    filename='./train.log',  
     filemode='w' 
 )
 
@@ -52,14 +52,12 @@ class MemoryEfficientMultiheadAttention(nn.Module):
         batch_size = query.size(1)
         
 
-        q = self.split_heads(self.q_proj(query), batch_size)  # (batch, nhead, seq, d_k)
+        q = self.split_heads(self.q_proj(query), batch_size)  
         k = self.split_heads(self.k_proj(key), batch_size)
         v = self.split_heads(self.v_proj(value), batch_size)
-
-        # 分块计算
         outputs = []
         for i in range(0, query.size(0), self.chunk_size):
-            q_chunk = q[:, :, i:i+self.chunk_size, :]          # (batch, nhead, chunk, d_k)
+            q_chunk = q[:, :, i:i+self.chunk_size, :]         
             k_chunk = k[:, :, i:i+self.chunk_size, :]         
             v_chunk = v[:, :, i:i+self.chunk_size, :]        
             
@@ -69,9 +67,9 @@ class MemoryEfficientMultiheadAttention(nn.Module):
             chunk_output = torch.matmul(attn_probs, v_chunk)
             outputs.append(chunk_output)
 
-        output = torch.cat(outputs, dim=2)                     # (batch, nhead, seq, d_k)
+        output = torch.cat(outputs, dim=2)                    
         output = output.permute(2, 0, 1, 3).reshape(-1, batch_size, self.nhead * self.d_k)
-        output = self.out_proj(output)                         # (seq, batch, d_model)
+        output = self.out_proj(output)                       
         return output, None  
 
 class ImprovedTransformerLayer(nn.Module):
@@ -102,9 +100,9 @@ class ImprovedTransformerLayer(nn.Module):
         return src
 
 
-class GEARS_Model(nn.Module):
+class scPert_Model(nn.Module):
     def __init__(self, args,embedding_path):
-        super(GEARS_Model, self).__init__()
+        super(scPert_Model, self).__init__()
         self.args = args
         self.num_genes = args['num_genes']
         self.num_perts = args['num_perts']
@@ -113,21 +111,16 @@ class GEARS_Model(nn.Module):
         self.device = args['device']
 
         # Load gene embeddings 
-        gene_data = np.load(r"/home/lumk/scpert/demo/data/embeddings/gene_2_kge_comgcn_final_common.npz")
+        gene_data = np.load("./embeddings/gene_2_kge_comgcn_final_common.npz")
         self.loaded_gene_names = gene_data['gene_names']
         self.loaded_embeddings = torch.tensor(gene_data['embeddings'], dtype=torch.float32, device=self.device)
         self.gene_to_index = {gene: idx for idx, gene in enumerate(self.loaded_gene_names)}
 
         # Load pert embeddings
-        pert_data = np.load("/home/lumk/scpert/demo/data/embeddings/gene_embeddingss_full_common.npz")
+        pert_data = np.load("./embeddings/gene_embeddingss_full_common.npz")
         self.pert_gene_names = pert_data['gene_names']
         self.pert_embeddings = torch.tensor(pert_data['embeddings'], dtype=torch.float32, device=self.device)
         self.pert_to_index = {gene: idx for idx, gene in enumerate(self.pert_gene_names)}
-
-        # scGPT embeddings
-        # self.gene_emb = torch.tensor(np.load(f"/home/lumk/scpert/scGPT/embeddings/papalexi_512.npy"), 
-                                #    dtype=torch.float32, device=self.device)
-
         self.gene_emb = torch.tensor(np.load(embedding_path), 
                             dtype=torch.float32, device=self.device)
 
@@ -199,30 +192,8 @@ class GEARS_Model(nn.Module):
 
         self.pert_emb = nn.Embedding(self.num_perts, self.hidden_size)
         self.control_emb = nn.Parameter(torch.randn(1, self.hidden_size) / np.sqrt(self.hidden_size))
-        self.pos_emb = nn.Embedding(self.num_genes, self.hidden_size)
-        
-
-        # self._init_weights()
-        
+        self.pos_emb = nn.Embedding(self.num_genes, self.hidden_size)    
         self.to(self.device)
-
-    # def _init_weights(self):
-    #     """
-    #     Initialize the weights of the model with proper initialization schemes
-    #     based on parameter dimensions.
-    #     """
-    #     for name, param in self.named_parameters():
-    #         if len(param.shape) >= 2:
-    #             # For weight matrices (2D or higher), use xavier uniform
-    #             nn.init.xavier_uniform_(param)
-    #         else:
-    #             # For bias terms (1D), use zeros or small constant initialization
-    #             nn.init.zeros_(param)
-    #             # Alternative: use small uniform initialization
-    #             # nn.init.uniform_(param, -0.1, 0.1)
-
-
-
 
     def get_random_embedding(self, gene_name):
 
@@ -250,7 +221,6 @@ class GEARS_Model(nn.Module):
             
 
         if pert_name in self.pert_to_index:
-            # logging.info(f"get scgpt {pert_name}")
             return self.pert_embeddings[self.pert_to_index[pert_name]]
         
 
@@ -258,7 +228,6 @@ class GEARS_Model(nn.Module):
 
     def forward(self, pert_data):
         x, pert = pert_data.x, pert_data.pert
-        # print(pert)
         num_graphs = len(pert_data.batch.unique())
 
         gene_emb = self.gene_emb
@@ -271,11 +240,6 @@ class GEARS_Model(nn.Module):
         gene_context = torch.matmul(gene_interaction, gene_emb)
         gene_context = self.gene_interaction_layer(gene_context) 
         gene_emb = gene_emb + gene_context
-
-
-        # pos_emb = self.pos_emb(torch.arange(self.num_genes, device=self.device))
-        # gene_emb = gene_emb + pos_emb.unsqueeze(0)
-
 
         pert_emb_matrix = torch.zeros(num_graphs, self.num_genes, self.hidden_size, device=self.device)
 

@@ -184,9 +184,7 @@ class GeneSimNetwork():
         
         edge_index_ = [(node_map[e[0]], node_map[e[1]]) for e in
                       self.G.edges]
-        self.edge_index = torch.tensor(edge_index_, dtype=torch.long).T
-        #self.edge_weight = torch.Tensor(self.edge_list['importance'].values)
-        
+        self.edge_index = torch.tensor(edge_index_, dtype=torch.long)      
         edge_attr = nx.get_edge_attributes(self.G, 'importance') 
         importance = np.array([edge_attr[e] for e in self.G.edges])
         self.edge_weight = torch.Tensor(importance)
@@ -335,56 +333,6 @@ def filter_pert_in_go(condition, pert_names):
             return True
         else:
             return False
-        
-
-
-
-# def loss_fct(pred, y, perts, ctrl = None, direction_lambda = 1e-3, dict_filter = None):
-#     """
-#     Main MSE Loss function, includes direction loss
-
-#     Args:
-#         pred (torch.tensor): predicted values
-#         y (torch.tensor): true values
-#         perts (list): list of perturbations
-#         ctrl (str): control perturbation
-#         direction_lambda (float): direction loss weight hyperparameter
-#         dict_filter (dict): dictionary of perturbations to conditions
-
-#     """
-#     gamma = 2
-#     mse_p = torch.nn.MSELoss()
-#     perts = np.array(perts)
-#     losses = torch.tensor(0.0, requires_grad=True).to(pred.device)
-
-#     for p in set(perts):
-#         pert_idx = np.where(perts == p)[0]
-        
-#         # during training, we remove the all zero genes into calculation of loss.
-#         # this gives a cleaner direction loss. empirically, the performance stays the same.
-#         if p!= 'ctrl':
-#             retain_idx = dict_filter[p]
-#             pred_p = pred[pert_idx][:, retain_idx]
-#             y_p = y[pert_idx][:, retain_idx]
-#         else:
-#             pred_p = pred[pert_idx]
-#             y_p = y[pert_idx]
-#         losses = losses + torch.sum((pred_p - y_p)**(2 + gamma))/pred_p.shape[0]/pred_p.shape[1]
-                         
-#         ## direction loss
-#         if (p!= 'ctrl'):
-#             losses = losses + torch.sum(direction_lambda *
-#                                 (torch.sign(y_p - ctrl[retain_idx]) -
-#                                  torch.sign(pred_p - ctrl[retain_idx]))**2)/\
-#                                  pred_p.shape[0]/pred_p.shape[1]
-#         else:
-#             losses = losses + torch.sum(direction_lambda * (torch.sign(y_p - ctrl) -
-#                                                 torch.sign(pred_p - ctrl))**2)/\
-#                                                 pred_p.shape[0]/pred_p.shape[1]
-#     return losses/(len(set(perts)))
-
-
-# Focal MSE Loss
 
 
 def loss_fct(pred, y, perts, ctrl=None, direction_lambda=1e-3, dict_filter=None, 
@@ -473,96 +421,6 @@ def focal_mse_loss(pred, target, ctrl, gamma=2):
     mse = (pred - target)**2
     return torch.mean(mse * focal_weight**gamma)
 
-# def loss_fct_with_tracking(pred, y, perts, ctrl=None, direction_lambda=1e-3, dict_filter=None, 
-#                           l1_lambda=1e-5, cosine_lambda=0.1, focal_gamma=2, class_weights_indices=None,
-#                           model_params=None, return_components=False):
-#     """
-#     带组件跟踪的损失函数
-#     """
-#     perts = np.array(perts)
-#     losses = torch.tensor(0.0, requires_grad=True).to(pred.device)
-    
-#     # 用于跟踪各组件
-#     components = {
-#         'focal_mse': torch.tensor(0.0).to(pred.device),
-#         'weighted_mse': torch.tensor(0.0).to(pred.device),
-#         'direction_loss': torch.tensor(0.0).to(pred.device),
-#         'cosine_loss': torch.tensor(0.0).to(pred.device),
-#         'l1_reg': torch.tensor(0.0).to(pred.device)
-#     }
-    
-#     cos_similarity = torch.nn.CosineSimilarity(dim=1)
-#     n_perts = len(set(perts))
-    
-#     for p in set(perts):
-#         pert_idx = np.where(perts == p)[0]
-        
-#         if p != 'ctrl' and dict_filter is not None:
-#             retain_idx = dict_filter[p]
-#             pred_p = pred[pert_idx][:, retain_idx]
-#             y_p = y[pert_idx][:, retain_idx]
-#             ctrl_p = ctrl[retain_idx] 
-#         else:
-#             pred_p = pred[pert_idx]
-#             y_p = y[pert_idx]
-#             ctrl_p = ctrl
-        
-#         # Focal MSE Loss
-#         focal_mse = focal_mse_loss(pred_p, y_p, ctrl_p.to(pred_p.device))
-#         components['focal_mse'] += focal_mse
-#         losses = losses + focal_mse
-        
-#         # Weighted MSE Loss (if class weights are provided)
-#         if class_weights_indices is not None:
-#             class_weights = calculate_class_weights(y,
-#                                                     important_genes_indices=class_weights_indices,
-#                                                     boost_factor=5,
-#                                                     base_weight=1.0,
-#                                                     normalize=True)
-#             if p != 'ctrl' and dict_filter is not None:
-#                 weighted_mse = torch.mean(class_weights[retain_idx] * (pred_p - y_p)**2)
-#             else:
-#                 weighted_mse = torch.mean(class_weights * (pred_p - y_p)**2)
-#             components['weighted_mse'] += weighted_mse
-#             losses = losses + weighted_mse
-        
-#         # Direction Loss (improved)
-#         if ctrl is not None:
-#             if p != 'ctrl' and dict_filter is not None:
-#                 direction_loss = torch.mean(torch.abs(torch.sign(y_p - ctrl[retain_idx]) - 
-#                                                       torch.sign(pred_p - ctrl[retain_idx])))
-#             else:
-#                 direction_loss = torch.mean(torch.abs(torch.sign(y_p - ctrl) - 
-#                                                       torch.sign(pred_p - ctrl)))
-#             components['direction_loss'] += direction_lambda * direction_loss
-#             losses = losses + direction_lambda * direction_loss
-        
-#         # Cosine Similarity Loss
-#         cosine_loss = 1 - cos_similarity(pred_p.view(pred_p.size(0), -1), 
-#                                          y_p.view(y_p.size(0), -1)).mean()
-#         components['cosine_loss'] += cosine_lambda * cosine_loss
-#         losses = losses + cosine_lambda * cosine_loss
-    
-#     # L1 Regularization (if model parameters are provided)
-#     if model_params is not None and l1_lambda > 0:
-#         l1_reg = torch.tensor(0., requires_grad=True).to(pred.device)
-#         for param in model_params:
-#             l1_reg = l1_reg + torch.norm(param, 1)
-#         components['l1_reg'] = l1_lambda * l1_reg
-#         losses = losses + l1_lambda * l1_reg
-    
-#     # 平均化组件 
-#     for key in components:
-#         components[key] = components[key] / n_perts
-    
-#     total_loss = losses / n_perts
-#     components['total_loss'] = total_loss
-    
-#     if return_components:
-#         return total_loss, components
-#     else:
-#         return total_loss
-
 def calculate_class_weights(y, 
                            important_genes_indices,
                            base_weight=1.0,
@@ -578,71 +436,15 @@ def calculate_class_weights(y,
         boost_factor (float): Weight enhancement multiplier for important genes
         normalize (bool): Whether to normalise so that the weights are averaged to 1
     """
-    # 初始化基础权重
     weights = torch.full((y.shape[1],), base_weight, dtype=torch.float32)
-    
-    # 增强重要基因权重
+
     if important_genes_indices:
-        # 过滤无效索引
         valid_indices = [idx for idx in important_genes_indices if idx < y.shape[1]]
         weights[valid_indices] *= boost_factor
-    
-    # 可选归一化（保持权重均值不变）
     if normalize:
         weights = weights / weights.mean()
     
     return weights.to(y.device)
-
-
-
-# # Function to get gene index
-# def get_gene_index(gene_name, adata):
-#     """Get the index of a gene in the dataset"""
-#     if 'gene_name' in adata.var.columns:
-#         gene_names = pd.Index(adata.var.gene_name)
-#         if gene_name in gene_names:
-#             return gene_names.get_loc(gene_name)
-    
-#     # If gene_name column doesn't exist or gene not found there, try with index
-#     if gene_name in adata.var_names:
-#         return adata.var_names.get_loc(gene_name)
-    
-#     # Try alternative names
-#     if gene_name == 'CD274':
-#         alternatives = ['PD-L1', 'PDL1', 'pdl1', 'B7-H1']
-#         for alt in alternatives:
-#             if alt in adata.var_names:
-#                 return adata.var_names.get_loc(alt)
-    
-#     print(f"Warning: Gene {gene_name} not found in dataset")
-#     return None
-
-
-# Helper function to calculate class weights
-
-
-# def calculate_class_weights(y, method='balanced', important_genes_indices=None, boost_factor=10):
-#     """
-#     Calculate class weights with boosted weights for important genes
-#     """
-#     gene_freq = torch.sum(y != 0, dim=0)
-#     if method == 'inverse':
-#         weights = 1 / (gene_freq + 1)
-#     elif method == 'balanced':
-#         weights = 1 / (2 * gene_freq)
-#         weights[gene_freq == 0] = 1
-#     else:
-#         raise ValueError("Invalid method. Choose 'inverse' or 'balanced'.")
-    
-#     # Normalize weights
-#     weights = weights / weights.sum() * len(weights)
-    
-#     # Boost important genes' weights
-#     if important_genes_indices is not None:
-#         weights[important_genes_indices] *= boost_factor
-    
-#     return weights
-
 
 def print_sys(s):
     """system print
@@ -662,9 +464,6 @@ def create_cell_graph_for_prediction(X, pert_idx, pert_gene):
         pert_gene (list): list of perturbations
 
     """
-
-    # if pert_idx is None:
-    #     pert_idx = [-1]
     return Data(x=torch.Tensor(X).T, pert_idx = None, pert=pert_gene)
     
 
@@ -681,18 +480,10 @@ def create_cell_graph_dataset_for_prediction(pert_gene, ctrl_adata, gene_names,
         num_samples (int): number of samples to use for inference (default: 300)
 
     """
-
-    # Get the indices (and signs) of applied perturbation
-    # pert_idx = [np.where(p == np.array(gene_names))[0][0] for p in pert_gene]
-
     Xs = ctrl_adata[np.random.randint(0, len(ctrl_adata), num_samples), :].X.toarray()
     # Create cell graphs
     cell_graphs = [create_cell_graph_for_prediction(X, None, pert_gene).to(device) for X in Xs]
     return cell_graphs
-
-##
-##GI related utils
-##
 
 def get_coeffs(singles_expr, first_expr, second_expr, double_expr):
     """
@@ -742,9 +533,7 @@ def get_GI_params(preds, combo):
     first_expr = np.array(preds[f'{combo[0]}+ctrl']).T
     second_expr = np.array(preds[f'{combo[1]}+ctrl']).T
     double_expr = np.array(preds[f'{combo[0]}+{combo[1]}']).T
-    #之前是"_"
     
-    # print(singles_expr,double_expr)
     return get_coeffs(singles_expr, first_expr, second_expr, double_expr)
 
 def get_GI_genes_idx(adata, GI_gene_file):
@@ -759,7 +548,6 @@ def get_GI_genes_idx(adata, GI_gene_file):
     """
     # Genes used for linear model fitting
     GI_genes = np.load(GI_gene_file, allow_pickle=True)
-    # GI_genes = GI_gene_file
     GI_genes_idx = np.where([g in GI_genes for g in adata.var.gene_name.values])[0]
     
     return GI_genes_idx
@@ -784,56 +572,37 @@ def get_genes_from_perts(perts):
     return list(np.unique(gene_list))
 
 def filter_gi_score_data(adata):
-    # 确保 'condition' 列在 adata.obs 中
     if 'condition' not in adata.obs.columns:
         raise ValueError("'condition' column not found in adata.obs")
-    
-    # 创建一个字典来存储每个基因的扰动情况
     gene_perturbations = {}
     
-    # 遍历所有条件
     for condition in adata.obs['condition']:
         genes = condition.split('+')
         if condition == 'ctrl':
-            # 保存对照组
             gene_perturbations.setdefault('ctrl', set()).add(condition)
-        # elif len(genes) == 1:
-        #     # 保存单个基因扰动
-        #     gene_perturbations.setdefault(genes[0], set()).add(condition)
-        # elif len(genes) == 2:
         else:
             if 'ctrl' not in genes:
-                # 这是一个基因组合 (a+b)
                 gene_perturbations.setdefault(genes[0], set()).add(condition)
                 gene_perturbations.setdefault(genes[1], set()).add(condition)
             else:
-                # 这是一个单基因扰动 (a+ctrl 或 ctrl+a)
                 gene = next(gene for gene in genes if gene != 'ctrl')
                 gene_perturbations.setdefault(gene, set()).add(condition)
     
-    # 找出所有满足条件的扰动组合
     valid_perturbations = set()
-    valid_perturbations.add('ctrl')  # 添加对照组
+    valid_perturbations.add('ctrl')  
     
     for gene, perturbations in gene_perturbations.items():
         if gene != 'ctrl':
-            # 添加单个基因扰动，包括 "gene+ctrl" 和 "ctrl+gene" 的形式
             single_pert = next((p for p in perturbations if len(p.split('+')) == 1 or 'ctrl' in p.split('+')), None)
             if single_pert:
                 valid_perturbations.add(single_pert)
-            
-            # 添加基因组合
             combined_perts = [p for p in perturbations if '+' in p and 'ctrl' not in p]
             for combined_pert in combined_perts:
                 other_gene = next(g for g in combined_pert.split('+') if g != gene)
                 other_single_pert = next((p for p in gene_perturbations.get(other_gene, []) if len(p.split('+')) == 1 or 'ctrl' in p.split('+')), None)
                 if other_single_pert:
                     valid_perturbations.update([single_pert, other_single_pert, combined_pert])
-    
-    # 创建一个布尔索引来筛选数据
     valid_index = adata.obs['condition'].isin(valid_perturbations)
-    
-    # 使用布尔索引来筛选 AnnData 对象
     filtered_adata = adata[valid_index].copy()
     
     return filtered_adata

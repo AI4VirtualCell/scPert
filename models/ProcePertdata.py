@@ -148,8 +148,6 @@ class PertData:
 
         """
         data_path = self.data_path
-        # print("Start load1")
-        # print("data_path:", data_path)
         if DataName in ['norman', 'adamson', 'dixit', 
                          'replogle_k562_essential', 
                          'replogle_rpe1_essential']:
@@ -171,9 +169,7 @@ class PertData:
             self.dataset_name = data_path.split('/')[-1]
             self.dataset_path = data_path
             adata_path = os.path.join(data_path, 'perturb_processed.h5ad')
-            # print(adata_path)
             self.adata = sc.read_h5ad(adata_path)
-            # print(self.adata)
             pyg_path = os.path.join(data_path, 'data_pyg')
 
         elif os.path.exists(data_path):
@@ -181,7 +177,6 @@ class PertData:
             
             self.adata = sc.read_h5ad(adata_path)
             self.dataset_name = DataName
-            # self.dataset_name = data_path.split('/')[-1]
             self.dataset_path = data_path
             pyg_path = os.path.join(data_path, DataName, 'data_pyg')
 
@@ -206,7 +201,6 @@ class PertData:
         if not os.path.exists(pyg_path):
             os.mkdir(pyg_path)
         dataset_fname = os.path.join(pyg_path, 'cell_graphs.pkl')
-        print(dataset_fname)
                 
         if os.path.isfile(dataset_fname):
             print_sys("Local copy of pyg dataset is detected. Loading...")
@@ -248,8 +242,6 @@ class PertData:
             raise ValueError("Please specify condition")
         if 'gene_name' not in adata.var.columns.values:
             raise ValueError("Please specify gene name")
-        # if 'cell_type' not in adata.obs.columns.values:
-        #     raise ValueError("Please specify cell type")
         
         dataset_name = dataset_name.lower()
         self.dataset_name = dataset_name
@@ -347,8 +339,6 @@ class PertData:
         if test_perts:
             test_perts_str = '_'.join(test_perts)
             split_path = split_path[:-4] + '_' + test_perts_str + '.pkl'
-            # split_path = split_path[:-4] + '_' + test_perts + '.pkl'
-        
         if os.path.exists(split_path):
             print('here1')
             print_sys("Local copy of split is detected. Loading...")
@@ -384,25 +374,7 @@ class PertData:
                                         seed=seed,
                                         test_perts = test_perts,
                                         only_test_set_perts = only_test_set_perts
-                                        )
-
-                                        
-            # if split in ['simulation', 'simulation_single']:
-            #     # simulation split
-            #     DS = DataSplitter(self.adata, split_type=split)
-                
-            #     adata, subgroup = DS.split_data(train_gene_set_size = train_gene_set_size, 
-            #                                     combo_seen2_train_frac = combo_seen2_train_frac,
-            #                                     seed=seed,
-            #                                     test_perts = test_perts,
-            #                                     only_test_set_perts = only_test_set_perts
-            #                                    )
-            #     subgroup_path = split_path[:-4] + '_subgroup.pkl'
-            #     pickle.dump(subgroup, open(subgroup_path, "wb"))
-            #     self.subgroup = subgroup
-
-
-                
+                                        )           
             elif split[:5] == 'combo':
                 # combo perturbation
                 split_type = 'combo'
@@ -520,160 +492,6 @@ class PertData:
                 return self.dataloader
             print_sys("Done!")
             
-    # non-output with test dataloader loadcode belowed    
-         
-    # def get_dataloader(self, batch_size, test_batch_size = None):
-    #     """
-    #     Get dataloaders for training and testing
-
-    #     Parameters
-    #     ----------
-    #     batch_size: int
-    #         Batch size for training
-    #     test_batch_size: int
-    #         Batch size for testing
-
-    #     Returns
-    #     -------
-    #     dict
-    #         Dictionary of dataloaders
-
-    #     """
-    #     if test_batch_size is None:
-    #         test_batch_size = batch_size
-            
-    #     self.node_map = {x: it for it, x in enumerate(self.adata.var.gene_name)}
-    #     self.gene_names = self.adata.var.gene_name
-       
-    #     # Create cell graphs
-    #     cell_graphs = {}
-    #     if self.split == 'no_split':
-    #         i = 'test'
-    #         cell_graphs[i] = []
-    #         for p in self.set2conditions[i]:
-    #             if p != 'ctrl':
-    #                 cell_graphs[i].extend(self.dataset_processed[p])
-                
-    #         print_sys("Creating dataloaders....")
-    #         # Set up dataloaders
-    #         test_loader = DataLoader(cell_graphs['test'],
-    #                             batch_size=batch_size, shuffle=False)
-
-    #         print_sys("Dataloaders created...")
-    #         return {'test_loader': test_loader}
-    #     else:
-    #         if self.split =='no_test':
-    #             splits = ['train','val']
-    #         else:
-    #             splits = ['train','val','test']
-    #         for i in splits:
-    #             cell_graphs[i] = []
-    #             for p in self.set2conditions[i]:
-
-    #                 cell_graphs[i].extend(self.dataset_processed[p])
-
-    #         print_sys("Creating dataloaders....")
-            
-    #         # Set up dataloaders
-    #         train_loader = DataLoader(cell_graphs['train'],
-    #                             batch_size=batch_size, shuffle=True, drop_last = True)
-    #         val_loader = DataLoader(cell_graphs['val'],
-    #                             batch_size=batch_size, shuffle=True)
-            
-    #         if self.split !='no_test':
-    #             test_loader = DataLoader(cell_graphs['test'],
-    #                             batch_size=batch_size, shuffle=False)
-    #             self.dataloader =  {'train_loader': train_loader,
-    #                                 'val_loader': val_loader,
-    #                                 'test_loader': test_loader}
-    #         else: 
-    #             self.dataloader =  {'train_loader': train_loader,
-    #                                 'val_loader': val_loader}
-    #         print_sys("Done!")
-    # DP uses code belowed
-    # def get_dataloader(self, batch_size, test_batch_size=None, num_workers=4, pin_memory=True):
-    #     """
-    #     Get dataloaders for training and testing with parallel data loading
-
-    #     Parameters
-    #     ----------
-    #     batch_size: int
-    #         Batch size for training
-    #     test_batch_size: int
-    #         Batch size for testing
-    #     num_workers: int
-    #         Number of worker processes for data loading
-    #     pin_memory: bool
-    #         Whether to pin memory for faster data transfer to GPU
-
-    #     Returns
-    #     -------
-    #     dict
-    #         Dictionary of dataloaders
-    #     """
-    #     if test_batch_size is None:
-    #         test_batch_size = batch_size
-            
-    #     self.node_map = {x: it for it, x in enumerate(self.adata.var.gene_name)}
-    #     self.gene_names = self.adata.var.gene_name
-    
-    #     # Create cell graphs
-    #     cell_graphs = {}
-    #     if self.split == 'no_split':
-    #         i = 'test'
-    #         cell_graphs[i] = []
-    #         for p in self.set2conditions[i]:
-    #             if p != 'ctrl':
-    #                 cell_graphs[i].extend(self.dataset_processed[p])
-                
-    #         print_sys("Creating dataloaders with parallel loading...")
-    #         # Set up dataloaders with parallel loading
-    #         test_loader = DataLoader(cell_graphs['test'],
-    #                             batch_size=batch_size, 
-    #                             shuffle=False,
-    #                             num_workers=num_workers,
-    #                             pin_memory=pin_memory)
-
-    #         print_sys("Dataloaders created...")
-    #         return {'test_loader': test_loader}
-    #     else:
-    #         if self.split =='no_test':
-    #             splits = ['train','val']
-    #         else:
-    #             splits = ['train','val','test']
-    #         for i in splits:
-    #             cell_graphs[i] = []
-    #             for p in self.set2conditions[i]:
-    #                 cell_graphs[i].extend(self.dataset_processed[p])
-
-    #         print_sys("Creating dataloaders with parallel loading...")
-            
-    #         # Set up dataloaders with parallel processing
-    #         train_loader = DataLoader(cell_graphs['train'],
-    #                             batch_size=batch_size, 
-    #                             shuffle=True, 
-    #                             drop_last=True,
-    #                             num_workers=num_workers,
-    #                             pin_memory=pin_memory)
-    #         val_loader = DataLoader(cell_graphs['val'],
-    #                             batch_size=batch_size, 
-    #                             shuffle=True,
-    #                             num_workers=num_workers,
-    #                             pin_memory=pin_memory)
-            
-    #         if self.split !='no_test':
-    #             test_loader = DataLoader(cell_graphs['test'],
-    #                             batch_size=batch_size, 
-    #                             shuffle=False,
-    #                             num_workers=num_workers,
-    #                             pin_memory=pin_memory)
-    #             self.dataloader = {'train_loader': train_loader,
-    #                                 'val_loader': val_loader,
-    #                                 'test_loader': test_loader}
-    #         else: 
-    #             self.dataloader = {'train_loader': train_loader,
-    #                                 'val_loader': val_loader}
-    #         print_sys("Done!")
 
     def get_pert_idx(self, pert_category):
         """

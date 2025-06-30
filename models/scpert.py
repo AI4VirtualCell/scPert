@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import StepLR, OneCycleLR
 import torch.distributed as dist
 from torch.nn.parallel import DataParallel
 
-from .model import GEARS_Model
+from .model import scPert_Model
 from .inference import evaluate, compute_metrics, deeper_analysis, \
                   non_dropout_analysis
 from .utils import loss_fct, parse_any_pert, \
@@ -23,19 +23,19 @@ torch.manual_seed(0)
 import warnings
 warnings.filterwarnings("ignore")
 
-class GEARS:
+class scPert:
     """
-    GEARS base model class
+    scPert base model class
     """
 
     def __init__(self, pert_data, 
                  device = 'cuda',
                  weight_bias_track = False, 
-                 proj_name = 'GEARS', 
-                 exp_name = 'GEARS',
+                 proj_name = 'scPert', 
+                 exp_name = 'scPert',
                  embedding_path=None):
         """
-        Initialize GEARS model
+        Initialize scPert model
 
         Parameters
         ----------
@@ -46,9 +46,9 @@ class GEARS:
         weight_bias_track: bool
             Whether to track performance on wandb. Default: False
         proj_name: str
-            Project name for wandb. Default: 'GEARS'
+            Project name for wandb. Default: 'scPert'
         exp_name: str
-            Experiment name for wandb. Default: 'GEARS'
+            Experiment name for wandb. Default: 'scPert'
 
         Returns
         -------
@@ -220,7 +220,7 @@ class GEARS:
             self.config['G_go'] = sim_network.edge_index
             self.config['G_go_weight'] = sim_network.edge_weight
             
-        self.model = GEARS_Model(self.config, self.embedding_path ).to(self.device)
+        self.model = scPert_Model(self.config, self.embedding_path ).to(self.device)
         self.best_model = deepcopy(self.model)
         
     def load_pretrained(self, path):
@@ -236,19 +236,10 @@ class GEARS:
         -------
         None
         """
-
-        # with open(os.path.join(path, 'config.pkl'), 'rb') as f:
-        #     config = pickle.load(f)
-        
-        # del config['device'], config['num_genes'], config['num_perts']
-        # self.model_initialize(**config)
-        # self.config = config
-        
-        # state_dict = torch.load(os.path.join(path, 'model.pt'), map_location = torch.device('cpu'))
         with open(os.path.join(path, 'config.pkl'), 'rb') as f:
             config = pickle.load(f)
         exclude_keys = ['device', 'num_genes', 'num_perts', 'embedding_size', 'pert_names', 'pert_node_map']
-    # Remove parameters that are not needed by model_initialize
+        # Remove parameters that are not needed by model_initialize
         for key in exclude_keys:
             config.pop(key, None)
 
@@ -322,13 +313,12 @@ class GEARS:
         
         if type_list:
             for pert in pert_list:
-                # 修复：统一使用字符串作为字典键
                 if isinstance(pert, str):
                     pert_key = pert.replace('+', '_')
-                    pert_for_model = pert  # 模型需要字符串格式
+                    pert_for_model = pert  
                 else:
                     pert_key = '_'.join(pert)
-                    pert_for_model = '+'.join(pert)  # 转换为字符串格式给模型
+                    pert_for_model = '+'.join(pert)  
                 
                 try:
                     # If prediction is already saved, then skip inference
@@ -380,9 +370,9 @@ class GEARS:
         self.saved_pred.update(results_pred)
 
         if dir == None:
-            np.savez(f"/home/lumk/scpert/analy_pic/pred_results/pred_scpert_{pert_key}.npz", **results_pred)
+            np.savez(f"./pred_scpert_{pert_key}.npz", **results_pred)
         else:
-            np.savez(f"/home/lumk/scpert/demo/pred_results/pred_scpert_{pert_key}.npz", **results_pred)
+            np.savez(f"./pred_scpert_{pert_key}.npz", **results_pred)
         return results_pred
     def plot_perturbation_heatmap(self, conditions=None, save_file=None):
         """
@@ -502,8 +492,6 @@ class GEARS:
         cbar2 = plt.colorbar(im2, ax=ax2)
         
         # Add labels to indicate up/down regulation
-                # Add labels to indicate up/down regulation
-        # Add labels to indicate up/down regulation
         for cbar in [cbar1, cbar2]:
             cbar.set_label('', rotation=270, labelpad=15, color='black')
             cbar.ax.tick_params(colors='black')
@@ -538,39 +526,28 @@ class GEARS:
 
         Returns
         -------
-        GI scores for the given combinatorial perturbation based on GEARS
+        GI scores for the given combinatorial perturbation based on scPert
         predictions
 
         """
         try:
             # If prediction is already saved, then skip inference
             pred = {}
-            # pred[combo[0]] = self.saved_pred[combo[0]]
-            # pred[combo[1]] = self.saved_pred[combo[1]]
-            # pred['+'.join(combo)] = self.saved_pred['+'.join(combo)]
             pred[combo[0]] = self.saved_pred[f'{combo[0]}+ctrl']
             pred[combo[1]] = self.saved_pred[f'{combo[1]}+ctrl']
             pred['+'.join(combo)] = self.saved_pred['+'.join(combo)]
         except:
             pred = self.predict([f'{combo[0]}+ctrl', f'{combo[1]}+ctrl', f'{combo[0]}+{combo[1]}'])
-
         mean_control = get_mean_control(self.adata).values  
-        # print(mean_control.shape)
         pred = {p:pred[p]-mean_control for p in pred} 
-        # print(pred.keys())
-        # print(pred['AHR+ctrl'])
         if GI_genes_file is not None:
             # If focussing on a specific subset of genes for calculating metrics
             GI_genes_idx = get_GI_genes_idx(self.adata, GI_genes_file)       
         else:
             GI_genes_idx = np.arange(len(self.adata.var.gene_name.values))
-        # print(len(GI_genes_idx),GI_genes_idx)
-        # pred = {p:pred[p][GI_genes_idx] for p in pred}
         pred = {p: pred[p][GI_genes_idx] 
                 for p in pred 
                 if "all" not in p.lower()}
-        # print(pred.keys())
-        # print(pred.values())
         
         return get_GI_params(pred, combo)
 
@@ -584,7 +561,7 @@ class GEARS:
                                                     'PRDM1', 'RELB', 'RPL22L1', 'RUNX1', 'SHOC2', 'SLC2A1', 'SPI1', 'SYK', 'TBX2', 'TFAP2A', 
                                                     'TFAP2C', 'TFRC', 'TNFSF10', 'TUBB4B', 'UBC', 'ZBTB18', 'ZFP36L1'], 
                                 conditions=None, save_file=None):
-    # def plot_perturbation_heatmap(self, key_genes=['FGFR2', 'FGFR3', 'NFE2L2', 'PDGFRA', 'SYK', 'TFRC', 'TUBB4B'], conditions=None, save_file=None):
+        # def plot_perturbation_heatmap(self, key_genes=['FGFR2', 'FGFR3', 'NFE2L2', 'PDGFRA', 'SYK', 'TFRC', 'TUBB4B'], conditions=None, save_file=None):
         """
         Plot the perturbation comparison for specified key genes
         """
@@ -610,14 +587,9 @@ class GEARS:
                 parts = condition.split('+')
                 return '+'.join(sorted(parts))
             return condition
-            
-       
-        # 检查所有关键基因是否存在
         missing_genes = [gene for gene in key_genes if gene not in gene2idx]
         if missing_genes:
             raise KeyError(f"Following genes not found in the dataset: {', '.join(missing_genes)}")
-        
-        # 获取基因索引
         gene_indices = [gene2idx[gene] for gene in key_genes]
 
         if conditions is None:
@@ -778,11 +750,9 @@ class GEARS:
         truth = adata[adata.obs.condition == query].X.toarray()[:, de_idx]
         
         query_ = [q for q in query.split('+') if q != 'ctrl']
-        
-        # 修复：重新构造查询字符串并使用字符串作为字典键
-        query_str = '+'.join(query_)  # 重新构造为字符串格式
-        query_key = '_'.join(query_)  # 用作字典键
-        pred_result = self.predict([query_str])  # 传递字符串而不是列表
+        query_str = '+'.join(query_) 
+        query_key = '_'.join(query_) 
+        pred_result = self.predict([query_str]) 
         pred = pred_result[query_key][de_idx]
         
         ctrl_means = adata[adata.obs['condition'] == 'ctrl'].to_df().mean()[
@@ -813,7 +783,6 @@ class GEARS:
             plt.savefig(save_file, bbox_inches='tight')
         plt.show()
     
-# weight_decay = 5e-4
     def train(self, epochs=20, 
             lr=0.002,
             weight_decay=1e-5,
@@ -847,13 +816,8 @@ class GEARS:
 
 
         best_model = deepcopy(self.model)
-        # optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay = weight_decay)
-
         optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
-        # optimizer = RAdam(self.model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-8, weight_decay=0)
         scheduler = OneCycleLR(optimizer, max_lr=0.01, epochs=epochs, steps_per_epoch=len(train_loader))
-        # scheduler = StepLR(optimizer, step_size=1, gamma=0.5)
-
         min_val = np.inf
         if key_genes:
             gene2idx = self.node_map
