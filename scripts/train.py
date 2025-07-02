@@ -1,9 +1,12 @@
 import os
+import sys
 import torch
 import numpy as np
-from models import ProcePertdata,scPert
+sys.path.append(r'./')
+from models import ProcePertdata,scpert
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
+torch.cuda.set_device('cuda:1')
 
 
 embedding_dir = "/home/lumk/scpert/scGPT/embeddings/"
@@ -20,13 +23,13 @@ for embedding_file, DataName in embedding_to_data_map.items():
     print(f"\n===== Processing dataset: {DataName} with embedding: {embedding_file} =====\n")
     
     # Initialize and prepare data
-    pertData = ProcePertdata(data_path)
+    pertData = ProcePertdata.PertData(data_path)
     pertData.load(DataName=DataName)
     pertData.prepare_split(split='simulation', seed=77)
     pertData.get_dataloader(batch_size=64, test_batch_size=64)
     embedding_path = os.path.join(embedding_dir, embedding_file)
     # Initialize scpert model
-    SCPert = scPert(pertData, device='cuda:0',
+    SCPert = scpert.scPert(pertData, device='cuda:1',
                          weight_bias_track=False,
                          proj_name='pertnet',
                          exp_name=f'pertnet_{DataName}',
@@ -40,7 +43,8 @@ for embedding_file, DataName in embedding_to_data_map.items():
     
     
     # Train the model
-    SCPert.train(epochs=25, lr=0.001)
+    # SCPert.train(epochs=25, lr=0.001)
+    SCPert.train(epochs=5, lr=0.001)
     # Save the model
     SCPert.save_model(f'{DataName}_model_FINAL')
     

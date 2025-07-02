@@ -38,23 +38,17 @@ python ./scripts/infer.py
 ```
 Using API Interface:
 ```
-from scpert import ProcePertdata,scPert
+from scpert import predict,train，ProcePertdata，scpert
 
 pertData = ProcePertdata(data_path)
 pertData.load(DataName = 'norman')
 
 # training
-SCPert = scPert(pertData, device = 'cuda:0')
-SCPert.model_initialize(hidden_size = 64)
-SCPert.train(epochs = 20)
-
-# saving or loading model
-SCPert.save_model(model_path)
-SCPert.load_pretrained(model_path)
+train(data_path, DataName, model_save_path, 
+embedding_path)
 
 # predict
-SCPert.predict([['PRDM1+CBFA2T3'], ['FEV']])
-SCPert.GI_predict(['CBL', 'CNN1'])
+predict(model_path, data_path, pert_file_path, model_name='norman', device='auto',embedding_path, output_dir='./results')
 ```
 ## Cite Us
 This work is currently under peer review.

@@ -244,6 +244,9 @@ class scPert:
             config.pop(key, None)
 
         # Initialize the model with the loaded configuration
+        if 'uncertainty' in config:
+            del config['uncertainty']
+            del config['uncertainty_reg']
         self.model_initialize(**config)
         self.config = config
 
@@ -835,13 +838,11 @@ class scPert:
                 optimizer.zero_grad()
                 y = batch.y
                 pred = self.model(batch)
-                loss, components = loss_fct_with_tracking(pred, y, batch.pert,
+                loss= loss_fct(pred, y, perts=batch.pert,
                                 ctrl = self.ctrl_expression, 
                                 dict_filter = self.dict_filter,
-                                direction_lambda = self.config['direction_lambda'],
                             model_params=self.model.parameters(),
-                            class_weights_indices=gene_indices,
-                            return_components=True)      
+                            class_weights_indices=gene_indices)      
                 loss.backward()
                 nn.utils.clip_grad_value_(self.model.parameters(), clip_value=1.0)
                 optimizer.step()
