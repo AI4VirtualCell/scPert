@@ -9,13 +9,13 @@ from models import ProcePertdata,scpert
 torch.cuda.set_device('cuda:1')
 
 
-embedding_dir = "/home/lumk/scpert/scGPT/embeddings/"
+embedding_dir = "./embeddings/"
 
 # Get all embedding files
 embedding_files = [f for f in os.listdir(embedding_dir) if f.endswith('.npy')]
 
 # Base data path
-data_path = "/home/lumk/scpert/demo/data"
+data_path = "./data"
 embedding_to_data_map = {"gene_embeddings_norman_512.npy": "norman"}
 
 # Process each dataset
@@ -43,8 +43,7 @@ for embedding_file, DataName in embedding_to_data_map.items():
     
     
     # Train the model
-    # SCPert.train(epochs=25, lr=0.001)
-    SCPert.train(epochs=5, lr=0.001)
+    SCPert.train(epochs=25, lr=0.001)
     # Save the model
     SCPert.save_model(f'{DataName}_model_FINAL')
     

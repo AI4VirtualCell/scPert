@@ -157,14 +157,6 @@ class scPert:
             pearson correlation threshold when constructing coexpression graph, default 0.4
         direction_lambda: float
             regularization term to balance direction loss and prediction loss, default 1
-        G_go: scipy.sparse.csr_matrix
-            GO graph, default None
-        G_go_weight: scipy.sparse.csr_matrix
-            GO graph edge weights, default None
-        G_coexpress: scipy.sparse.csr_matrix
-            co-expression graph, default None
-        G_coexpress_weight: scipy.sparse.csr_matrix
-            co-expression graph edge weights, default None
         no_perturb: bool
             predict no perturbation condition, default False
 
@@ -181,10 +173,6 @@ class scPert:
                        'num_similar_genes_co_express_graph' : num_similar_genes_co_express_graph,
                        'coexpress_threshold': coexpress_threshold,
                        'direction_lambda' : direction_lambda,
-                       'G_go': G_go,
-                       'G_go_weight': G_go_weight,
-                       'G_coexpress': G_coexpress,
-                       'G_coexpress_weight': G_coexpress_weight,
                        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
                        'num_genes': self.num_genes,
                        'num_perts': self.num_perts,
@@ -195,30 +183,6 @@ class scPert:
         
         if self.wandb:
             self.wandb.config.update(self.config)
-        
-        if self.config['G_coexpress'] is None:
-            ## calculating co expression similarity graph
-            edge_list = get_similarity_network(network_type='co-express',
-                                               adata=self.adata,
-                                               threshold=coexpress_threshold,
-                                               k=num_similar_genes_co_express_graph,
-                                               data_path=self.data_path,
-                                               data_name=self.dataset_name,
-                                               split=self.split, seed=self.seed,
-                                               train_gene_set_size=self.train_gene_set_size,
-                                               set2conditions=self.set2conditions)
-
-            sim_network = GeneSimNetwork(edge_list, self.gene_list, node_map = self.node_map)
-            self.config['G_coexpress'] = sim_network.edge_index
-            self.config['G_coexpress_weight'] = sim_network.edge_weight
-        
-        if self.config['G_go'] is None:
-            df_jaccard = pd.read_csv(os.path.join(self.data_path, '/home/lumk/scpert/demo/data/go_essential_all.csv'))
-            k=num_similar_genes_co_express_graph
-            edge_list = df_jaccard.groupby('target').apply(lambda x: x.nlargest(k + 1,['importance'])).reset_index(drop = True)
-            sim_network = GeneSimNetwork(edge_list, self.pert_list, node_map = self.node_map_pert)
-            self.config['G_go'] = sim_network.edge_index
-            self.config['G_go_weight'] = sim_network.edge_weight
             
         self.model = scPert_Model(self.config, self.embedding_path ).to(self.device)
         self.best_model = deepcopy(self.model)
@@ -377,144 +341,7 @@ class scPert:
         else:
             np.savez(f"./pred_scpert_{pert_key}.npz", **results_pred)
         return results_pred
-    def plot_perturbation_heatmap(self, conditions=None, save_file=None):
-        """
-        Plot the perturbation comparison with distinct visualization for up/down regulation
-        """
-        import seaborn as sns
-        import matplotlib.pyplot as plt
-        import numpy as np
-        import pandas as pd
-        from scipy import stats
-        import matplotlib.colors as mcolors
-
-        # Set up the plotting style
-        plt.style.use('default')  # Use default style instead of 'white'
-        sns.set_style("white")
-        plt.rcParams['font.size'] = 12
-
-        adata = self.adata
-        gene2idx = self.node_map
-        cond2name = dict(adata.obs[['condition', 'condition_name']].values)
-        gene_raw2id = dict(zip(adata.var.index.values, adata.var.gene_name.values))
-
-        if conditions is None:
-            conditions = [c for c in adata.obs.condition.unique() if c != 'ctrl']
-
-        all_predictions = []
-        all_truth = []
-        genes_list = []
-        
-        def calculate_logfc(treatment, control, pseudocount=1.0):
-            """Calculate logFC with pseudocount"""
-            treatment_mean = np.mean(treatment + pseudocount, axis=0)
-            control_mean = np.mean(control + pseudocount, axis=0)
-            return np.log2(treatment_mean / control_mean)
-        
-        # Process each condition
-        for query in conditions:
-            de_idx = [gene2idx[gene_raw2id[i]] for i in
-                    adata.uns['top_non_dropout_de_20'][cond2name[query]]]
-            genes = [gene_raw2id[i] for i in
-                    adata.uns['top_non_dropout_de_20'][cond2name[query]]]
-            genes_list.append(genes)
-            
-            treatment = adata[adata.obs.condition == query].X.toarray()[:, de_idx]
-            control = adata[adata.obs.condition == 'ctrl'].X.toarray()[:, de_idx]
-            
-            truth_logfc = calculate_logfc(treatment, control)
-            
-            query_ = query
-            if isinstance(query_, str):
-                pred_key = query_[0]
-                pred = self.predict(query_[0])[pred_key][de_idx]
-            else:
-                pred_key = query_
-                pred = self.predict(query_)[pred_key][de_idx]
-                
-            pred_logfc = calculate_logfc(
-                pred.reshape(1, -1),
-                control
-            )
-            
-            all_predictions.append(pred_logfc)
-            all_truth.append(truth_logfc)
-
-        reference_genes = genes_list[0]
-        pred_df = pd.DataFrame(all_predictions, 
-                            index=conditions,
-                            columns=reference_genes)
-        truth_df = pd.DataFrame(all_truth,
-                            index=conditions,
-                            columns=reference_genes)
-
-        def create_updown_colormap():
-            # Create a colormap that's blue for negative, white for zero, and red for positive
-            colors_down = plt.cm.Blues(np.linspace(0.2, 1, 100))
-            colors_up = plt.cm.Reds(np.linspace(0.2, 1, 100))
-            
-            # Add white color in the middle
-            white = np.array([[1, 1, 1, 1]])
-            colors = np.vstack([colors_down[::-1], white, colors_up])
-            return mcolors.LinearSegmentedColormap.from_list('UpDown', colors)
-
-        # Create figure with white background
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, len(conditions)/2), facecolor='white')
-        fig.patch.set_facecolor('white')
-        
-        # Get maximum absolute value for symmetric scale
-        max_val = max(abs(pred_df.values.max()), abs(pred_df.values.min()),
-                    abs(truth_df.values.max()), abs(truth_df.values.min()))
-        
-        # Create custom colormap
-        cmap = create_updown_colormap()
-        
-        # Custom normalization to make zero exactly in the middle
-        norm = mcolors.TwoSlopeNorm(vmin=-max_val, vcenter=0, vmax=max_val)
-        
-        # Plot predictions
-        im1 = ax1.imshow(pred_df.values, aspect='auto', cmap=cmap, norm=norm)
-        ax1.set_title("Prediction", pad=15, color='black')
-        ax1.set_xticks(np.arange(len(reference_genes)))
-        ax1.set_yticks(np.arange(len(conditions)))
-        ax1.set_xticklabels(reference_genes, rotation=45, ha='right', color='black')
-        ax1.set_yticklabels(conditions, color='black')
-        ax1.tick_params(axis='both', colors='black')
-        
-        # Plot ground truth
-        im2 = ax2.imshow(truth_df.values, aspect='auto', cmap=cmap, norm=norm)
-        ax2.set_title("Ground Truth", pad=15, color='black')
-        ax2.set_xticks(np.arange(len(reference_genes)))
-        ax2.set_yticks(np.arange(len(conditions)))
-        ax2.set_xticklabels(reference_genes, rotation=45, ha='right', color='black')
-        ax2.set_yticklabels(conditions, color='black')
-        ax2.tick_params(axis='both', colors='black')
-        
-        # Add colorbars with clear up/down labels
-        cbar1 = plt.colorbar(im1, ax=ax1)
-        cbar2 = plt.colorbar(im2, ax=ax2)
-        
-        # Add labels to indicate up/down regulation
-        for cbar in [cbar1, cbar2]:
-            cbar.set_label('', rotation=270, labelpad=15, color='black')
-            cbar.ax.tick_params(colors='black')
-            cbar.ax.yaxis.label.set_color('black')
-            # Remove numerical tick labels
-            cbar.set_ticks([])
-            # Add text annotations for up/down regulation
-            cbar.ax.text(3.5, max_val * 0.75, 'Up-regulated', ha='left', va='center', color='black')
-            cbar.ax.text(3.5, -max_val * 0.75, 'Down-regulated', ha='left', va='center', color='black')
-        
-        plt.tight_layout()
-        
-        if save_file:
-            plt.savefig(save_file, bbox_inches='tight', dpi=300, facecolor='white')
-        plt.show()
-        
-        return {
-            'prediction': pred_df,
-            'truth': truth_df
-        }
+    
         
     def GI_predict(self, combo, GI_genes_file='./genes_with_hi_mean.npy'):
         """
@@ -554,237 +381,6 @@ class scPert:
         
         return get_GI_params(pred, combo)
 
-
-
-
-
-    def plot_perturbation_heatmap_1(self, key_genes=[ 'ACTB', 'ASCL1', 'BATF3', 'BCL6', 'CDX2', 'CFLAR', 'CTNNB1', 'FGFR2', 'FGFR3', 'FOXA1', 
-                                                    'HMGA2', 'HNF1A', 'HSPD1', 'JUN', 'KLB', 'LDHA', 'LMO2', 'MAF', 'MDM4', 'MEF2C', 'MYB', 
-                                                    'MYH9', 'MYOG', 'NAV3', 'NEUROD1', 'NFE2L2', 'PAX5', 'PDGFRA', 'POU2F3', 'PPP1R12A', 
-                                                    'PRDM1', 'RELB', 'RPL22L1', 'RUNX1', 'SHOC2', 'SLC2A1', 'SPI1', 'SYK', 'TBX2', 'TFAP2A', 
-                                                    'TFAP2C', 'TFRC', 'TNFSF10', 'TUBB4B', 'UBC', 'ZBTB18', 'ZFP36L1'], 
-                                conditions=None, save_file=None):
-        # def plot_perturbation_heatmap(self, key_genes=['FGFR2', 'FGFR3', 'NFE2L2', 'PDGFRA', 'SYK', 'TFRC', 'TUBB4B'], conditions=None, save_file=None):
-        """
-        Plot the perturbation comparison for specified key genes
-        """
-        import seaborn as sns
-        import matplotlib.pyplot as plt
-        import numpy as np
-        import pandas as pd
-        import matplotlib.colors as mcolors
-
-        # Set up the plotting style
-        plt.style.use('default')
-        sns.set_style("white")
-        plt.rcParams['font.size'] = 12
-
-        adata = self.adata
-        gene2idx = self.node_map
-
-        def normalize_condition_name(condition):
-            """
-            Normalize condition names by sorting parts split by '+' to ensure consistent naming
-            """
-            if '+' in condition:
-                parts = condition.split('+')
-                return '+'.join(sorted(parts))
-            return condition
-        missing_genes = [gene for gene in key_genes if gene not in gene2idx]
-        if missing_genes:
-            raise KeyError(f"Following genes not found in the dataset: {', '.join(missing_genes)}")
-        gene_indices = [gene2idx[gene] for gene in key_genes]
-
-        if conditions is None:
-            # Get all unique conditions except 'ctrl'
-            all_conditions = [c for c in adata.obs.condition.unique() if c != 'ctrl']
-            # Normalize condition names
-            normalized_conditions = [normalize_condition_name(c) for c in all_conditions]
-            # Remove duplicates while preserving order
-            conditions = list(dict.fromkeys(normalized_conditions))
-        else:
-            # Normalize provided conditions
-            conditions = [normalize_condition_name(c) for c in conditions]
-            conditions = list(dict.fromkeys(conditions))
-
-        all_predictions = []
-        all_truth = []
-        
-        def calculate_logfc(treatment, control, pseudocount=1.0):
-            """Calculate logFC with pseudocount"""
-            treatment_mean = np.mean(treatment + pseudocount, axis=0)
-            control_mean = np.mean(control + pseudocount, axis=0)
-            return np.log2(treatment_mean / control_mean)
-        
-        # Process each condition
-        for query in conditions:
-            # Find all original condition names that normalize to this query
-            original_conditions = [c for c in adata.obs.condition.unique() 
-                                if normalize_condition_name(c) == query]
-            
-            if not original_conditions:
-                print(f"Warning: No matching conditions found for {query}")
-                continue
-                
-            # Use the first matching condition name
-            original_query = original_conditions[0]
-            
-            # Combine data from all matching conditions
-            treatment_data = []
-            for orig_cond in original_conditions:
-                treatment_data.append(adata[adata.obs.condition == orig_cond].X.toarray()[:, gene_indices])
-            treatment = np.vstack(treatment_data) if len(treatment_data) > 1 else treatment_data[0]
-            
-            control = adata[adata.obs.condition == 'ctrl'].X.toarray()[:, gene_indices]
-            
-            truth_logfc = calculate_logfc(treatment, control)
-            
-            if isinstance(original_query, str):
-                pred_key = original_query
-                pred = self.predict(original_query, type_list= False)[gene_indices]
-
-                
-            pred_logfc = calculate_logfc(
-                pred.reshape(1, -1),
-                control
-            )
-            
-            all_predictions.append(pred_logfc)
-            all_truth.append(truth_logfc)
-            
-
-        pred_df = pd.DataFrame(all_predictions, 
-                            index=conditions,
-                            columns=key_genes)
-        truth_df = pd.DataFrame(all_truth,
-                            index=conditions,
-                            columns=key_genes)
-
-        def create_updown_colormap():
-            colors_down = plt.cm.Blues(np.linspace(0.2, 1, 100))
-            colors_up = plt.cm.Reds(np.linspace(0.2, 1, 100))
-            white = np.array([[1, 1, 1, 1]])
-            colors = np.vstack([colors_down[::-1], white, colors_up])
-            return mcolors.LinearSegmentedColormap.from_list('UpDown', colors)
-
-        # Create figure with white background
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, len(conditions)/2), facecolor='white')
-        fig.patch.set_facecolor('white')
-        
-        # Get maximum absolute value for symmetric scale
-        max_val = max(abs(pred_df.values.max()), abs(pred_df.values.min()),
-                    abs(truth_df.values.max()), abs(truth_df.values.min()))
-        
-        # Create custom colormap
-        cmap = create_updown_colormap()
-        norm = mcolors.TwoSlopeNorm(vmin=-max_val, vcenter=0, vmax=max_val)
-        
-        # Plot predictions
-        im1 = ax1.imshow(pred_df.values, aspect='auto', cmap=cmap, norm=norm)
-        ax1.set_title("Prediction", pad=15, color='black')
-        ax1.set_xticks(np.arange(len(key_genes)))
-        ax1.set_yticks(np.arange(len(conditions)))
-        ax1.set_xticklabels(key_genes, rotation=45, ha='right', color='black')
-        ax1.set_yticklabels(conditions, color='black')
-        ax1.tick_params(axis='both', colors='black')
-        
-        # Plot ground truth
-        im2 = ax2.imshow(truth_df.values, aspect='auto', cmap=cmap, norm=norm)
-        ax2.set_title("Ground Truth", pad=15, color='black')
-        ax2.set_xticks(np.arange(len(key_genes)))
-        ax2.set_yticks(np.arange(len(conditions)))
-        ax2.set_xticklabels(key_genes, rotation=45, ha='right', color='black')
-        ax2.set_yticklabels(conditions, color='black')
-        ax2.tick_params(axis='both', colors='black')
-        
-        # Add colorbars
-        cbar1 = plt.colorbar(im1, ax=ax1)
-        cbar2 = plt.colorbar(im2, ax=ax2)
-        
-        for cbar in [cbar1, cbar2]:
-            cbar.set_label('', rotation=270, labelpad=15, color='black')
-            cbar.ax.tick_params(colors='black')
-            cbar.ax.yaxis.label.set_color('black')
-            cbar.set_ticks([])
-            cbar.ax.text(3.5, max_val * 0.75, 'Up-regulated', ha='left', va='center', color='black')
-            cbar.ax.text(3.5, -max_val * 0.75, 'Down-regulated', ha='left', va='center', color='black')
-        
-        plt.tight_layout()
-        
-        if save_file:
-            plt.savefig(save_file, bbox_inches='tight', dpi=300, facecolor='white')
-        plt.show()
-        
-        return {
-            'prediction': pred_df,
-            'truth': truth_df
-        }
-    def plot_perturbation(self, query, save_file = None):
-        """
-        Plot the perturbation graph
-
-        Parameters
-        ----------
-        query: str
-            condition to be queried
-        save_file: str
-            path to save the plot
-
-        Returns
-        -------
-        None
-
-        """
-
-        import seaborn as sns
-        import matplotlib.pyplot as plt
-        
-        sns.set_theme(style="ticks", rc={"axes.facecolor": (0, 0, 0, 0)}, font_scale=1.5)
-
-        adata = self.adata
-        gene2idx = self.node_map
-        cond2name = dict(adata.obs[['condition', 'condition_name']].values)
-        gene_raw2id = dict(zip(adata.var.index.values, adata.var.gene_name.values))
-
-        de_idx = [gene2idx[gene_raw2id[i]] for i in
-                adata.uns['top_non_dropout_de_20'][cond2name[query]]]
-        genes = [gene_raw2id[i] for i in
-                adata.uns['top_non_dropout_de_20'][cond2name[query]]]
-        truth = adata[adata.obs.condition == query].X.toarray()[:, de_idx]
-        
-        query_ = [q for q in query.split('+') if q != 'ctrl']
-        query_str = '+'.join(query_) 
-        query_key = '_'.join(query_) 
-        pred_result = self.predict([query_str]) 
-        pred = pred_result[query_key][de_idx]
-        
-        ctrl_means = adata[adata.obs['condition'] == 'ctrl'].to_df().mean()[
-            de_idx].values
-
-        pred = pred - ctrl_means
-        truth = truth - ctrl_means
-        
-        plt.figure(figsize=[16.5,4.5])
-        plt.title(query)
-        plt.boxplot(truth, showfliers=False,
-                    medianprops = dict(linewidth=0))    
-
-        for i in range(pred.shape[0]):
-            _ = plt.scatter(i+1, pred[i], color='red')
-
-        plt.axhline(0, linestyle="dashed", color = 'green')
-
-        ax = plt.gca()
-        ax.xaxis.set_ticklabels(genes, rotation = 90)
-
-        plt.ylabel("Change in Gene Expression over Control",labelpad=10)
-        plt.tick_params(axis='x', which='major', pad=5)
-        plt.tick_params(axis='y', which='major', pad=5)
-        sns.despine()
-        
-        if save_file:
-            plt.savefig(save_file, bbox_inches='tight')
-        plt.show()
     
     def train(self, epochs=20, 
             lr=0.002,
@@ -902,13 +498,6 @@ class scPert:
         print_sys(log.format(test_metrics['mse_de']))
         print("test_metrics is :", test_metrics)
         print("test_pert_res is :", test_pert_res)
-        
-        if self.wandb:
-            metrics = ['mse', 'pearson']
-            for m in metrics:
-                self.wandb.log({'test_' + m: test_metrics[m],
-                           'test_de_'+m: test_metrics[m + '_de']                     
-                          })
                 
         out = deeper_analysis(self.adata, test_res)
         out_non_dropout = non_dropout_analysis(self.adata, test_res)
@@ -916,14 +505,7 @@ class scPert:
         metrics = ['pearson_delta']
         metrics_non_dropout = ['frac_opposite_direction_top20_non_dropout',
                                'frac_sigma_below_1_non_dropout',
-                               'mse_top20_de_non_dropout']
-        
-        if self.wandb:
-            for m in metrics:
-                self.wandb.log({'test_' + m: np.mean([j[m] for i,j in out.items() if m in j])})
-
-            for m in metrics_non_dropout:
-                self.wandb.log({'test_' + m: np.mean([j[m] for i,j in out_non_dropout.items() if m in j])})        
+                               'mse_top20_de_non_dropout']       
 
         if self.split == 'simulation':
             print_sys("Start doing subgroup analysis for simulation split...")

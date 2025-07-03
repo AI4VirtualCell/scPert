@@ -44,8 +44,7 @@ pertData = ProcePertdata(data_path)
 pertData.load(DataName = 'norman')
 
 # training
-train(data_path, DataName, model_save_path, 
-embedding_path)
+train(data_path, DataName, model_save_path, embedding_path)
 
 # predict
 predict(model_path, data_path, pert_file_path, model_name='norman', device='auto',embedding_path, output_dir='./results')

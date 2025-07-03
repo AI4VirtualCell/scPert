@@ -111,13 +111,13 @@ class scPert_Model(nn.Module):
         self.device = args['device']
 
         # Load gene embeddings 
-        gene_data = np.load("/home/lumk/scPert/embeddings/gene_2_kge_comgcn_final_common.npz")
+        gene_data = np.load("./embeddings/gene_2_kge_comgcn_final_common.npz")
         self.loaded_gene_names = gene_data['gene_names']
         self.loaded_embeddings = torch.tensor(gene_data['embeddings'], dtype=torch.float32, device=self.device)
         self.gene_to_index = {gene: idx for idx, gene in enumerate(self.loaded_gene_names)}
 
         # Load pert embeddings
-        pert_data = np.load("/home/lumk/scPert/embeddings/gene_embeddingss_full_common.npz")
+        pert_data = np.load("./embeddings/gene_embeddingss_full_common.npz")
         self.pert_gene_names = pert_data['gene_names']
         self.pert_embeddings = torch.tensor(pert_data['embeddings'], dtype=torch.float32, device=self.device)
         self.pert_to_index = {gene: idx for idx, gene in enumerate(self.pert_gene_names)}

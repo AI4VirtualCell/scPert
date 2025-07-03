@@ -90,11 +90,7 @@ class PertData:
 
         if not os.path.exists(self.data_path):
             os.mkdir(self.data_path)
-        server_path = 'https://dataverse.harvard.edu/api/access/datafile/6153417'
-        dataverse_download(server_path,
-                           os.path.join(self.data_path, 'gene2go_all.pkl'))
-        with open(os.path.join(self.data_path, 'gene2go_all.pkl'), 'rb') as f:
-            self.gene2go = pickle.load(f)
+
     
     def set_pert_genes(self):
         """
@@ -123,10 +119,8 @@ class PertData:
             dataverse_download(server_path, path_)
             with open(path_, 'rb') as f:
                 essential_genes = pickle.load(f)
-    
-        gene2go = {i: self.gene2go[i] for i in essential_genes if i in self.gene2go}
 
-        self.pert_names = np.unique(list(gene2go.keys()))
+        self.pert_names = np.unique(list(all_pert_genes))
         self.node_map_pert = {x: it for it, x in enumerate(self.pert_names)}
             
     def load(self, DataName = None, data_path = None):
@@ -186,8 +180,6 @@ class PertData:
                              "or a path to an h5ad file")
         
         self.set_pert_genes()
-        print_sys('These perturbations are not in the GO graph and their '
-                  'perturbation can thus not be predicted')
         not_in_go_pert = np.array(self.adata.obs[
                                   self.adata.obs.condition.apply(
                                   lambda x:not filter_pert_in_go(x,
